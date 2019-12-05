@@ -7,12 +7,15 @@ outputName = 'query'
 def query(date, type_, sensor, lat, lon):
     """
 
-    :param date:
-    :param type_:
-    :param sensor:
-    :param lat:
-    :param lon:
-    :return:
+    Args:
+        date:
+        type_:
+        sensor:
+        lat:
+        lon:
+
+    Returns:
+
     """
     print('Querying')
 
