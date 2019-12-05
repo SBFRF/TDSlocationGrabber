@@ -5,7 +5,15 @@ inputName = 'database'
 outputName = 'query'
 
 def query(date, type_, sensor, lat, lon):
+    """
 
+    :param date:
+    :param type_:
+    :param sensor:
+    :param lat:
+    :param lon:
+    :return:
+    """
     print('Querying')
 
     with open(inputName + '.p', 'rb') as outfile:
