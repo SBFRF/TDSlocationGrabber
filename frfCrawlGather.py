@@ -6,11 +6,13 @@ from netCDF4 import Dataset
 server = 'http://134.164.129.55'
 #server = 'https://chlthredds.erdc.dren.mil'
 
+datatype = ['waves', 'currents']
+
 outputName = 'database'
 
 def main():
     
-    urlList = getUrls()
+    urlList = getUrls(datatype)
     
     database, errorbase = buildDatabase(urlList)
 
@@ -24,12 +26,26 @@ def main():
     
     showErrors(errorbase)
     
-def getUrls():
+def getUrls(datatype):
+
+    urlList = [None] * 999999
+    istart = 0
+    
+    for datatype_ in datatype:
+        urlList, istart = getUrlsEachType(datatype_, urlList, istart)
+    
+    urlList[istart:] = []
+    
+    return urlList
+    
+def getUrlsEachType(datatype, urlList, istart):
     
     if server == 'http://134.164.129.55':
-        urlMain = server + '/thredds/catalog/FRF/oceanography/waves/catalog.xml'
+        urlMain = (server + '/thredds/catalog/FRF/oceanography/{}/catalog.xml'
+            .format(datatype))
     elif server == 'https://chlthredds.erdc.dren.mil':
-        urlMain = server + '/thredds/catalog/frf/oceanography/waves/catalog.xml'
+        urlMain = (server + '/thredds/catalog/frf/oceanography/{}/catalog.xml'
+            .format(datatype))
     else:
         print('Unknown server')
         quit()
@@ -37,9 +53,8 @@ def getUrls():
     tree = ET.parse(urllib.request.urlopen(urlMain))
     root = tree.getroot()
     
-    urlList = [None] * 999999
+    i = istart
     
-    i = 0
     for child in root[-1]:
         
         if child.tag[-10:] != 'catalogRef':
@@ -62,9 +77,7 @@ def getUrls():
                     (urlList[i].split('/')[-1].split('_')[2:]))))
                 i += 1
     
-    urlList[i:] = []
-    
-    return urlList
+    return urlList, i
                 
 def buildDatabase(urlList):
 
@@ -148,7 +161,8 @@ def sortDatabase(database):
     print('Sorting')
 
     # get sorting indices - sort by Sensor, then by Date
-    ind = np.lexsort((database['Date'], database['Sensor']))[::-1]
+    ind = np.lexsort((database['Date'], database['Sensor'], database['Type']
+        ))[::-1]
     
     # sort each column using sorting indices
     for header in database:
