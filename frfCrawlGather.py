@@ -1,18 +1,15 @@
-import csv, pickle, urllib.request, warnings
+import csv, pickle, urllib.request, warnings, sys, time
 import numpy as np
 import xml.etree.ElementTree as ET
 from netCDF4 import Dataset
+import progressbar
 
-server = 'http://134.164.129.55'
-#server = 'https://chlthredds.erdc.dren.mil'
+def main(server):
+    """main code structure"""
 
-datatype = ['waves', 'currents']
+    datatype = ['waves', 'currents']
 
-outputName = 'database'
-
-def main():
-    
-    urlList = getUrls(datatype)
+    urlList = getUrls(server, datatype)
     
     database, errorbase = buildDatabase(urlList)
 
@@ -20,30 +17,32 @@ def main():
 
     database = collectLatLon(database)
 
-    saveBinary(database)
+    outputName = 'database'
 
-    saveCsv(database)
+    saveBinary(outputName, database)
+
+    saveCsv(outputName, database)
     
     showErrors(errorbase)
     
-def getUrls(datatype):
+def getUrls(server, datatype):
 
     urlList = [None] * 999999
     istart = 0
     
     for datatype_ in datatype:
-        urlList, istart = getUrlsEachType(datatype_, urlList, istart)
+        urlList, istart = getUrlsEachType(server, datatype_, urlList, istart)
     
     urlList[istart:] = []
     
     return urlList
     
-def getUrlsEachType(datatype, urlList, istart):
+def getUrlsEachType(server, datatype, urlList, istart):
     
     if server == 'http://134.164.129.55':
         urlMain = (server + '/thredds/catalog/FRF/oceanography/{}/catalog.xml'
             .format(datatype))
-    elif server == 'https://chlthredds.erdc.dren.mil':
+    elif server == 'https://chldata.erdc.dren.mil':
         urlMain = (server + '/thredds/catalog/frf/oceanography/{}/catalog.xml'
             .format(datatype))
     else:
@@ -54,9 +53,11 @@ def getUrlsEachType(datatype, urlList, istart):
     root = tree.getroot()
     
     i = istart
-    
-    for child in root[-1]:
-        
+    bar = progressbar.ProgressBar(maxval=len(root[-1]),
+                    widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
+    bar.start()
+    for ii, child in enumerate(root[-1]):
+        bar.update(ii+1)
         if child.tag[-10:] != 'catalogRef':
             continue
         urlChild = urlMain[:-11] + child.attrib[child.keys()[0]]
@@ -66,17 +67,25 @@ def getUrlsEachType(datatype, urlList, istart):
             if gchild.tag[-10:] != 'catalogRef':
                 continue
             urlGchild = urlChild[:-11] + gchild.attrib[gchild.keys()[0]]
-            tree = ET.parse(urllib.request.urlopen(urlGchild))
+            t, itMax = 0, 10
+            while t < itMax:
+                try:
+                    tree = ET.parse(urllib.request.urlopen(urlGchild))
+                    break
+                except:
+                    time.sleep(10)
+                    t += 1
+                    continue
             root = tree.getroot()
             for ggchild in root[-1]:
                 if ggchild.tag[-7:] != 'dataset':
                     continue
                 urlList[i] = '{}/thredds/dodsC/{}'.format(
                     server, ggchild.attrib['urlPath'])
-                print('Found {}'.format('_'.join(
-                    (urlList[i].split('/')[-1].split('_')[2:]))))
+                # print('Found {}'.format('_'.join(
+                #     (urlList[i].split('/')[-1].split('_')[2:]))))
                 i += 1
-    
+    bar.finish()
     return urlList, i
                 
 def buildDatabase(urlList):
@@ -98,56 +107,66 @@ def buildDatabase(urlList):
     i = 0
     j = 0
     k = 0
+    bar = progressbar.ProgressBar(maxval=len(urlList),
+                    widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
+    bar.start()
+    print("Begin Parsing found files")
+    for ii, url in enumerate(urlList):
+        for attempt in range(10):
+            try:
+                # print('Parsing {}'.format('_'.join(
+                #             (url.split('/')[-1].split('_')[2:]))))
+                bar.update(ii+1)
+                try:
+                    rootgrp = Dataset(url)
+                except OSError:
+                    print('Opening error')
+                    print('Url = ' + url)
+                    errorbase['OpeningError'][j] = url
+                    j += 1
+                    continue
 
-    for url in urlList:
-        print('Parsing {}'.format('_'.join(
-                    (url.split('/')[-1].split('_')[2:]))))
-        
-        try:
-            rootgrp = Dataset(url)
-        except OSError:
-            print('Opening error')
-            print('Url = ' + url)
-            errorbase['OpeningError'][j] = url
-            j += 1
-            continue
-            
-        varList = list(rootgrp.variables)
-        if 'latitude' in varList:
-            lat = rootgrp['latitude'][:]
-            lon = rootgrp['longitude'][:]
-        elif 'lat' in varList:
-            lat = rootgrp['lat'][:]
-            lon = rootgrp['lon'][:]
-        elif 'lidarLatitude' in varList:
-            lat = rootgrp['lidarLatitude'][:]
-            lon = rootgrp['lidarLongitude'][:]
-        else:
-            print('Lat/lon error')
-            errorbase['LatLonError'][k] = url
-            k += 1
-            continue
-        
-        if (type(lat) is np.ma.core.MaskedConstant or type(lon) is 
-        np.ma.core.MaskedConstant):
-            print('Lat/lon error')
-            errorbase['LatLonError'][k] = url
-            k += 1
-            continue
-        
-        rootgrp.close()
-        
-        date = int(url.split('_')[-1][:-3])
-        sensor = url.split('_')[2]
-        
-        database['Date'][i] = date
-        database['Type'][i] = url.split('_')[1]
-        database['Sensor'][i] = sensor
-        database['Lat'][i] = round(float(lat), 4)
-        database['Lon'][i] = round(float(lon), 4)
-        database['Url'][i] = url
-        i += 1
-        
+                varList = list(rootgrp.variables)
+                if 'latitude' in varList:
+                    lat = rootgrp['latitude'][:]
+                    lon = rootgrp['longitude'][:]
+                elif 'lat' in varList:
+                    lat = rootgrp['lat'][:]
+                    lon = rootgrp['lon'][:]
+                elif 'lidarLatitude' in varList:
+                    lat = rootgrp['lidarLatitude'][:]
+                    lon = rootgrp['lidarLongitude'][:]
+                else:
+                    print('Lat/lon error')
+                    errorbase['LatLonError'][k] = url
+                    k += 1
+                    continue
+
+                if (type(lat) is np.ma.core.MaskedConstant or type(lon) is
+                np.ma.core.MaskedConstant):
+                    print('Lat/lon error')
+                    errorbase['LatLonError'][k] = url
+                    k += 1
+                    continue
+
+                rootgrp.close()
+
+                date = int(url.split('_')[-1][:-3])
+                sensor = url.split('_')[2]
+
+                database['Date'][i] = date
+                database['Type'][i] = url.split('_')[1]
+                database['Sensor'][i] = sensor
+                database['Lat'][i] = round(float(lat), 4)
+                database['Lon'][i] = round(float(lon), 4)
+                database['Url'][i] = url
+                i += 1
+            except:
+                print('\n\r retrying {}'.format('_'.join((url.split('/')[-1].split('_')[2:]))))
+                continue
+            else:
+                break
+    bar.finish()
     for key in database:
         database[key][i:] = []
         
@@ -163,11 +182,14 @@ def sortDatabase(database):
     # get sorting indices - sort by Sensor, then by Date
     ind = np.lexsort((database['Date'], database['Sensor'], database['Type']
         ))[::-1]
-    
+    bar = progressbar.ProgressBar(maxval=len(database),
+                    widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
+    bar.start()
     # sort each column using sorting indices
-    for header in database:
+    for ii, header in enumerate(database):
         database[header] = list(np.array(database[header])[ind])
-
+        bar.update(ii+1)
+    bar.finish()
     return database
 
 def collectLatLon(database):
@@ -189,7 +211,12 @@ def collectLatLon(database):
     else:
         frfTag = 'frf'
 
+    bar = progressbar.ProgressBar(maxval=len(database['Url']),
+                    widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
+    bar.start()
+    print('Collecting Lat and Lon data')
     for i in range(len(database['Url'])):
+        bar.update(i+1)
         if (i == len(database['Url']) - 1 or database['Lat'][i] != 
         database['Lat'][i + 1] or database['Lon'][i] 
         != database['Lon'][i + 1]):
@@ -201,7 +228,15 @@ def collectLatLon(database):
             
             url = ('{}/thredds/catalog/{}/oceanography/waves/{}/catalog.xml'
                 .format(server, frfTag, database['Sensor'][i]))
-            tree = ET.parse(urllib.request.urlopen(url))
+            t, itMax = 0, 10
+            while t < itMax:
+                try:
+                    tree = ET.parse(urllib.request.urlopen(url))
+                    break
+                except:
+                    time.sleep(10)
+                    t += 1
+                    continue
             root = tree.getroot()
             foundNcml = False
             for child in root[-1]:
@@ -219,20 +254,20 @@ def collectLatLon(database):
                 dbNew['DateEnd'][j] = database['Date'][i + 1]
             else:
                 break
-    
+    bar.finish()
     for key in dbNew:
         dbNew[key][j + 1:] = []
 
     return dbNew
 
-def saveBinary(database):
+def saveBinary(outputName, database):
 
     print('Saving binary')
 
     with open(outputName + '.p', 'wb') as outfile:
         pickle.dump(database, outfile)
 
-def saveCsv(database):
+def saveCsv(outputName, database):
 
     print('Saving csv')
 
@@ -255,4 +290,10 @@ def showErrors(errorbase):
         print(url)
 
 if __name__ == '__main__':
-    main()
+    assert sys.argv[-1].lower()  in ['chl', 'frf'], "input argument must be in ['chl', 'frf']"
+    if sys.argv[-1].lower() == 'chl':
+        server = 'https://chldata.erdc.dren.mil'
+    elif sys.argv[-1].lower() == 'frf':
+        server = 'http://134.164.129.55'
+
+    main(server)
