@@ -3,28 +3,121 @@ import numpy as np
 import xml.etree.ElementTree as ET
 from netCDF4 import Dataset
 import progressbar
+import datetime as DT
 
-def main(server):
+def query(startDate, endDate, type, sensor=None, inputName='database', outputName=None):
+    """ will querey gauge location lookup table to provide locations of data within
+
+    Args:
+
+        startDate: datetime object that is to be inclusively searched (>=) for finding locations
+        endDate: datetime object that is to be inclusively searched (<=) for finding locations
+        type: type of data to be searched (eg currents, waves, etc). defines which folder to search through on oceanography.
+        sensor: gauge string name to look through
+        inputName: pickle file name that has data stored in it (default='database.p')
+        outputName: will save query as csv file if file name is given. program will append csv suffix. if None
+            program will not export.  To export, must be text file extension (default=None)
+
+    Returns:
+        dictionary with keys ['DateStart', 'DateEnd',
+         'Type': type of data
+         'Sensor': sensor name string
+         'Lat': lat of gauge location
+         'Lon': lon of gague location
+         'Url': OPeNDAP querey location
+
+
+    """
+    print('Querying')
+    with open(inputName + '.p', 'rb') as outfile:
+        database = pickle.load(outfile)
+    # convert datetime objects to numerical year
+    startDate = int(''.join([str(startDate.year), str(startDate.month)]))
+    endDate = int(''.join([str(endDate.year), str(endDate.month)]))
+    # 1st query = Date
+
+    dateStartList = np.array(database['DateStart'])
+    dateEndList = np.array(database['DateEnd'])
+    I1 = np.logical_and(dateEndList >= startDate, dateEndList <= endDate)
+    I2 = np.logical_and(dateStartList >= startDate, dateStartList <= endDate)
+    I3 = np.logical_and(dateStartList <= startDate, dateEndList >= endDate)
+    I = np.logical_or(I1, I2)
+    I = np.logical_or(I, I3)
+
+    # 2nd query = Type
+    typeList = np.array(database['Type'])
+    I = np.logical_and(typeList == type, I)
+    allList = [dateStartList[I], dateEndList[I], typeList[I]]
+
+    sensorList = np.array(database['Sensor'])
+    if sensor is not None:
+        # 3rd query = Sensor
+        I = np.logical_and(sensorList == sensor, I)
+        # allList = [dateStartList[I], dateEndList[I], typeList[I], sensorList[I]]
+
+    latList = np.array(database['Lat'])
+    # # 4th query = lat
+    # I_ = np.logical_and(latList >= lat[0], latList <= lat[1])
+    # I = np.logical_and(I, I_)
+    #
+    lonList = np.array(database['Lon'])
+    # # 5th query = lon
+    # I_ = np.logical_and(lonList >= lon[0], lonList <= lon[1])
+    # I = np.logical_and(I, I_)
+
+    urlList = np.array(database['Url'])[I]
+    allList.append(urlList)
+    allList = [dateStartList[I], dateEndList[I], typeList[I], sensorList[I],
+               latList[I], lonList[I], urlList]
+
+    queryData = dict()
+
+    i = 0
+    for key in database:
+        queryData[key] = allList[i]
+        i += 1
+
+    # convert DateStart and DateEnd back to datetime objects
+    for var in ['DateStart', 'DateEnd']:
+        queryData[var] = np.array([DT.datetime.strptime(str(date), '%Y%m') for date in queryData[var]])
+
+    # Stop and save data as necessary
+    if outputName is not None:
+        print('Saving query')
+
+        with open(outputName + '.csv', 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=queryData.keys())
+            writer.writeheader()
+            for i in range(len(urlList)):
+                row = dict()
+                for key in queryData:
+                    row[key] = queryData[key][i]
+                writer.writerow(row)
+
+    return queryData
+
+
+def buildLookupTable(server, outputName='database'):
     """main code structure"""
-
+    t = DT.datetime.now()
     datatype = ['waves', 'currents']
-
+    print('Get URLs')
     urlList = getUrls(server, datatype)
-    
+    print('building database')
     database, errorbase = buildDatabase(urlList)
-
+    print('sorting database')
     database = sortDatabase(database)
-
+    print('collecting Lon/Lat info')
     database = collectLatLon(database)
 
-    outputName = 'database'
-
+    print('saving data')
     saveBinary(outputName, database)
 
     saveCsv(outputName, database)
     
     showErrors(errorbase)
-    
+    print("process took {:.1f} minutes".format((DT.datetime.now()-t).minutes()))
+
 def getUrls(server, datatype):
 
     urlList = [None] * 999999
@@ -46,7 +139,7 @@ def getUrlsEachType(server, datatype, urlList, istart):
         urlMain = (server + '/thredds/catalog/frf/oceanography/{}/catalog.xml'
             .format(datatype))
     else:
-        print('Unknown server')
+        print('    Unknown server')
         quit()
     
     tree = ET.parse(urllib.request.urlopen(urlMain))
@@ -110,7 +203,6 @@ def buildDatabase(urlList):
     bar = progressbar.ProgressBar(maxval=len(urlList),
                     widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
     bar.start()
-    print("Begin Parsing found files")
     for ii, url in enumerate(urlList):
         for attempt in range(10):
             try:
@@ -120,8 +212,8 @@ def buildDatabase(urlList):
                 try:
                     rootgrp = Dataset(url)
                 except OSError:
-                    print('Opening error')
-                    print('Url = ' + url)
+                    print('    Opening error')
+                    print('    Url = ' + url)
                     errorbase['OpeningError'][j] = url
                     j += 1
                     continue
@@ -137,14 +229,14 @@ def buildDatabase(urlList):
                     lat = rootgrp['lidarLatitude'][:]
                     lon = rootgrp['lidarLongitude'][:]
                 else:
-                    print('Lat/lon error')
+                    print('    Lat/lon error')
                     errorbase['LatLonError'][k] = url
                     k += 1
                     continue
 
                 if (type(lat) is np.ma.core.MaskedConstant or type(lon) is
                 np.ma.core.MaskedConstant):
-                    print('Lat/lon error')
+                    print('    Lat/lon error')
                     errorbase['LatLonError'][k] = url
                     k += 1
                     continue
@@ -177,8 +269,6 @@ def buildDatabase(urlList):
 
 def sortDatabase(database):
 
-    print('Sorting')
-
     # get sorting indices - sort by Sensor, then by Date
     ind = np.lexsort((database['Date'], database['Sensor'], database['Type']
         ))[::-1]
@@ -194,8 +284,6 @@ def sortDatabase(database):
 
 def collectLatLon(database):
 
-    print('Gathering lat/lon')
-    
     dbNew = dict()
 
     headers = ['DateStart', 'DateEnd', 'Type', 'Sensor', 'Lat', 'Lon', 'Url']
@@ -214,7 +302,6 @@ def collectLatLon(database):
     bar = progressbar.ProgressBar(maxval=len(database['Url']),
                     widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
     bar.start()
-    print('Collecting Lat and Lon data')
     for i in range(len(database['Url'])):
         bar.update(i+1)
         if (i == len(database['Url']) - 1 or database['Lat'][i] != 
@@ -262,14 +349,14 @@ def collectLatLon(database):
 
 def saveBinary(outputName, database):
 
-    print('Saving binary')
+    print('    Saving binary')
 
     with open(outputName + '.p', 'wb') as outfile:
         pickle.dump(database, outfile)
 
 def saveCsv(outputName, database):
 
-    print('Saving csv')
+    print('    Saving csv')
 
     with open(outputName + '.csv', 'w') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=database.keys())
@@ -296,4 +383,4 @@ if __name__ == '__main__':
     elif sys.argv[-1].lower() == 'frf':
         server = 'http://134.164.129.55'
 
-    main(server)
+    buildLookupTable(server)
