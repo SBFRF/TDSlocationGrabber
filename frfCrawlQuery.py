@@ -1,13 +1,15 @@
 import csv, pickle
 import numpy as np
 
-inputName = 'database'
-outputName = 'query'
 
-def query(date, type_, sensor, lat, lon):
+# outputName = 'query'
+
+def query(date, type_, sensor, lat, lon, inputName='database', outputName=None):
     """
 
     Args:
+        inputName: pickle file name that has data stored in it
+        outputName: will save query as csv file if file name is given. program will append csv suffix
         date:
         type_:
         sensor:
@@ -64,17 +66,17 @@ def query(date, type_, sensor, lat, lon):
     for key in database:
         queryData[key] = allList[i]
         i += 1
+    if outputName is not None:
+        print('Saving query')
 
-    print('Saving query')
-
-    with open(outputName + '.csv', 'w') as csvfile:
-        writer = csv.DictWriter(csvfile, fieldnames=queryData.keys())
-        writer.writeheader()
-        for i in range(len(urlList)):
-            row = dict()
-            for key in queryData:
-                row[key] = queryData[key][i]
-            writer.writerow(row)
+        with open(outputName + '.csv', 'w') as csvfile:
+            writer = csv.DictWriter(csvfile, fieldnames=queryData.keys())
+            writer.writeheader()
+            for i in range(len(urlList)):
+                row = dict()
+                for key in queryData:
+                    row[key] = queryData[key][i]
+                writer.writerow(row)
     
     return queryData
 
