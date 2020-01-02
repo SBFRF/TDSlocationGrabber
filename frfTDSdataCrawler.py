@@ -29,6 +29,7 @@ def query(startDate, endDate, type, sensor=None, inputName='database', outputNam
 
     """
     print('Querying')
+
     with open(inputName + '.p', 'rb') as outfile:
         database = pickle.load(outfile)
     # convert datetime objects to numerical year
@@ -377,10 +378,13 @@ def showErrors(errorbase):
         print(url)
 
 if __name__ == '__main__':
-    assert sys.argv[-1].lower()  in ['chl', 'frf'], "input argument must be in ['chl', 'frf']"
+    assert sys.argv[1].lower()  in ['chl', 'frf'], "input argument must be in ['chl', 'frf']"
     if sys.argv[-1].lower() == 'chl':
         server = 'https://chldata.erdc.dren.mil'
     elif sys.argv[-1].lower() == 'frf':
         server = 'http://134.164.129.55'
+
+    # if len(sys.argv) > 2:
+    #     dtype = sys.argv[2:]
 
     buildLookupTable(server)
