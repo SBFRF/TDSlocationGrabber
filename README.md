@@ -12,3 +12,5 @@ I run on a weekly cron-job.
 
 this will run and crawl the CHLdata thredds location in the `waves` and `currents` folder to start by default. to 
 modify line 103 in frfTDSdataCrawler.py
+
+To querey lookup table, see `example.py`
