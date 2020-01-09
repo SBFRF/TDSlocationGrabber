@@ -116,7 +116,7 @@ def buildLookupTable(server, outputName='database'):
     saveCsv(outputName, database)
     
     showErrors(errorbase)
-    print("process took {:.1f} minutes".format((DT.datetime.now()-t).seconds()/60))
+    print("process took {:.1f} minutes".format((DT.datetime.now()-t).total_seconds()/60))
 
 def getUrls(server, datatype):
 
@@ -180,12 +180,12 @@ def getUrlsEachType(server, datatype, urlList, istart):
                 i += 1
     bar.finish()
     return urlList, i
-                
+    
 def buildDatabase(urlList):
 
     database = dict()
 
-    headers = ['Date', 'Type', 'Sensor', 'Lat', 'Lon', 'Url']
+    headers = ['DateStart', 'DateEnd', 'Type', 'Sensor', 'Lat', 'Lon', 'Url']
 
     for header in headers:
         database[header] = [None] * len(urlList)
@@ -219,6 +219,7 @@ def buildDatabase(urlList):
                     continue
 
                 varList = list(rootgrp.variables)
+                
                 if 'latitude' in varList:
                     lat = rootgrp['latitude'][:]
                     lon = rootgrp['longitude'][:]
@@ -241,12 +242,16 @@ def buildDatabase(urlList):
                     k += 1
                     continue
 
+                DateStart = rootgrp['time'][0].astype('datetime64[s]')
+                DateEnd = rootgrp['time'][-1].astype('datetime64[s]')
+        
                 rootgrp.close()
 
-                date = int(url.split('_')[-1][:-3])
+                # date = int(url.split('_')[-1][:-3])
                 sensor = url.split('_')[2]
 
-                database['Date'][i] = date
+                database['DateStart'][i] = DateStart
+                database['DateEnd'][i] = DateEnd
                 database['Type'][i] = url.split('_')[1]
                 database['Sensor'][i] = sensor
                 database['Lat'][i] = round(float(lat), 4)
@@ -270,8 +275,8 @@ def buildDatabase(urlList):
 def sortDatabase(database):
 
     # get sorting indices - sort by Sensor, then by Date
-    ind = np.lexsort((database['Date'], database['Sensor'], database['Type']
-        ))[::-1]
+    ind = np.lexsort((database['DateStart'], database['Sensor'],
+        database['Type']))[::-1]
     bar = progressbar.ProgressBar(maxval=len(database),
                     widgets=[progressbar.Bar('.', '[', ']'), ' ', progressbar.Percentage()])
     bar.start()
@@ -291,7 +296,7 @@ def collectLatLon(database):
     for header in headers:
         dbNew[header] = [None] * 999
 
-    dbNew['DateEnd'][0] = database['Date'][0]
+    dbNew['DateEnd'][0] = database['DateEnd'][0]
     j = 0
     
     if server == 'http://134.164.129.55':
@@ -304,10 +309,10 @@ def collectLatLon(database):
     bar.start()
     for i in range(len(database['Url'])):
         bar.update(i+1)
-        if (i == len(database['Url']) - 1 or database['Lat'][i] != 
-        database['Lat'][i + 1] or database['Lon'][i] 
+        if (i == len(database['Url']) - 1 or database['Lat'][i] !=
+        database['Lat'][i + 1] or database['Lon'][i]
         != database['Lon'][i + 1]):
-            dbNew['DateStart'][j] = database['Date'][i]
+            dbNew['DateStart'][j] = database['DateStart'][i]
             dbNew['Type'][j] = database['Type'][i]
             dbNew['Sensor'][j] = database['Sensor'][i]
             dbNew['Lat'][j] = database['Lat'][i]
@@ -328,7 +333,7 @@ def collectLatLon(database):
             foundNcml = False
             for child in root[-1]:
                 if child.tag[-7:] == 'dataset':
-                    dbNew['Url'][j] = '{}/thredds/dodsC/{}'.format(server, 
+                    dbNew['Url'][j] = '{}/thredds/dodsC/{}'.format(server,
                         child.attrib['urlPath'])
                     foundNcml = True
                     break
@@ -338,7 +343,7 @@ def collectLatLon(database):
             
             if i != len(database['Url']) - 1:
                 j += 1
-                dbNew['DateEnd'][j] = database['Date'][i + 1]
+                dbNew['DateEnd'][j] = database['DateEnd'][i + 1]
             else:
                 break
     bar.finish()
