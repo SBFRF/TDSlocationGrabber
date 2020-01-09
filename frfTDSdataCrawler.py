@@ -32,12 +32,11 @@ def query(startDate, endDate, type, sensor=None, inputName='database', outputNam
     with open(inputName + '.p', 'rb') as outfile:
         database = pickle.load(outfile)
     # convert datetime objects to numerical year
-    startDate =int(startDate.strftime('%Y%m'))
-    endDate = int(endDate.strftime('%Y%m'))
+    assert isinstance(startDate, DT.datetime)
+    assert isinstance(endDate, DT.datetime)
     # 1st query = Date
-
-    dateStartList = np.array(database['DateStart'])
-    dateEndList = np.array(database['DateEnd'])
+    dateStartList = np.array(database['DateStart']).astype(DT.datetime)
+    dateEndList = np.array(database['DateEnd']).astype(DT.datetime)
     I1 = np.logical_and(dateEndList >= startDate, dateEndList <= endDate)
     I2 = np.logical_and(dateStartList >= startDate, dateStartList <= endDate)
     I3 = np.logical_and(dateStartList <= startDate, dateEndList >= endDate)
