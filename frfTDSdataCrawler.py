@@ -2,9 +2,10 @@
 import csv, pickle, urllib.request, warnings, sys, time
 import numpy as np
 import xml.etree.ElementTree as ET
-from netCDF4 import Dataset
+from netCDF4 import Dataset, num2date
 import progressbar
 import datetime as DT
+
 
 def query(startDate, endDate, type, sensor=None, inputName='database', outputName=None):
     """Will querey gauge location lookup table to provide locations of data within.
@@ -76,10 +77,11 @@ def query(startDate, endDate, type, sensor=None, inputName='database', outputNam
         queryData[key] = allList[i]
         i += 1
 
+    # data are already in datetime
     # convert DateStart and DateEnd back to datetime objects
-    for var in ['DateStart', 'DateEnd']:
-        queryData[var] = np.array([DT.datetime.strptime(str(date), '%Y%m') for date in queryData[var]])
-
+    # for var in ['DateStart', 'DateEnd']:
+        #queryData[var] = np.array([DT.datetime.strptime(str(date), '%Y%m') for date in queryData[var]])
+        
     # Stop and save data as necessary
     if outputName is not None:
         print('Saving query')
@@ -241,8 +243,8 @@ def buildDatabase(urlList):
                     k += 1
                     continue
 
-                DateStart = rootgrp['time'][0].astype('datetime64[s]')
-                DateEnd = rootgrp['time'][-1].astype('datetime64[s]')
+                DateStart = num2date(rootgrp['time'][0], 'seconds since 1970-01-01')
+                DateEnd = num2date(rootgrp['time'][-1], 'seconds since 1970-01-01')
         
                 rootgrp.close()
 
@@ -381,10 +383,11 @@ def showErrors(errorbase):
         print(url)
 
 if __name__ == '__main__':
+    assert len(sys.argv) > 1, 'needs input'
     assert sys.argv[1].lower()  in ['chl', 'frf'], "input argument must be in ['chl', 'frf']"
     if sys.argv[-1].lower() == 'chl':
         server = 'https://chldata.erdc.dren.mil'
-    elif sys.argv[-1].lower() == 'frf':
+    else: # sys.argv[-1].lower() == 'frf':
         server = 'http://134.164.129.55'
 
     # if len(sys.argv) > 2:
